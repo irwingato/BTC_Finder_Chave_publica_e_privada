@@ -13,6 +13,7 @@
         "bitcoinjs-lib": "^6.1.5",
         "coinkey": "^3.0.0",
         "crypto": "^1.0.1",
+        "ecpair": "^2.1.0",
         "forge": "^2.3.0"
     }
 }
