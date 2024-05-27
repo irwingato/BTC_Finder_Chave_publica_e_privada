@@ -3,6 +3,7 @@ const fs = require('fs');
 const CoinKey = require('coinkey');
 const os = require('os');
 const crypto = require('crypto');
+const path = require('path');
 
 const wallets = ['1AWCLZAjKbV1P7AHvaPNCKiB7ZWVDMxFiz'];
 const numCPUs = os.cpus().length;
@@ -17,14 +18,33 @@ function generatePublic(privateKey) {
     return key.publicAddress;
 }
 
-function saveAttempt(privateKey) {
-    fs.appendFileSync('attempts.txt', `${privateKey}\n`);
+function saveAttempt(privateKey, attemptNumber) {
+    const logDir = 'attempts';
+    const logFile = path.join(logDir, `attempts_${attemptNumber}.txt`);
+
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir);
+    }
+
+    fs.appendFileSync(logFile, `${privateKey}\n`);
 }
 
 function loadLastAttempt() {
     try {
-        const attempts = fs.readFileSync('attempts.txt', 'utf8').trim().split('\n');
-        return attempts[attempts.length - 1];
+        const attemptsDir = 'attempts';
+        const attemptFiles = fs.readdirSync(attemptsDir);
+        const lastAttemptFile = attemptFiles.pop(); // Último arquivo é o mais recente
+
+        if (!lastAttemptFile) {
+            console.log('Nenhum arquivo de tentativa encontrado.');
+            return null;
+        }
+
+        const lastAttemptFilePath = path.join(attemptsDir, lastAttemptFile);
+        const lastAttemptContent = fs.readFileSync(lastAttemptFilePath, 'utf8').trim();
+        const lastAttemptLines = lastAttemptContent.split('\n');
+
+        return lastAttemptLines[lastAttemptLines.length - 1];
     } catch (err) {
         console.error('Erro ao carregar a última tentativa:', err.message);
         return null;
@@ -35,6 +55,20 @@ function createWorker(start, end, lastAttempt) {
     return new Worker(__filename, {
         workerData: { start, end, wallets, lastAttempt }
     });
+}
+
+function getRandomBigInt(min, max) {
+    const range = max - min;
+    const randomOffset = BigInt(Math.floor(Math.random() * Number(range)));
+    return min + randomOffset;
+}
+
+if (!fs.existsSync('logs')) {
+    fs.mkdirSync('logs');
+}
+
+if (!fs.existsSync('attempts.txt')) {
+    fs.writeFileSync('attempts.txt', '');
 }
 
 if (isMainThread) {
@@ -90,21 +124,19 @@ if (isMainThread) {
         const walletSet = new Set(wallets);
 
         let key = lastAttempt ? BigInt('0x' + lastAttempt) + increment : start;
+        let attemptNumber = 0;
         while (true) {
-            while (key <= end) {
-                const privateKey = key.toString(16).padStart(64, '0');
-                saveAttempt(privateKey);
+            let randomKey = getRandomBigInt(start, end);
+            const privateKey = randomKey.toString(16).padStart(64, '0');
+            saveAttempt(privateKey, attemptNumber);
 
-                const publicKey = generatePublic(privateKey);
-                if (walletSet.has(publicKey)) {
-                    parentPort.postMessage({ found: true, privateKey, publicKey });
-                    return;
-                }
-
-                key += increment;
+            const publicKey = generatePublic(privateKey);
+            if (walletSet.has(publicKey)) {
+                parentPort.postMessage({ found: true, privateKey, publicKey });
+                return;
             }
 
-            key = start; // Reset key to start if the end is reached
+            attemptNumber++;
         }
     })();
 }
