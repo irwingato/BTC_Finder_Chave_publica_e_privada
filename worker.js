@@ -7,10 +7,9 @@ const walletsSet = new Set(workerData.walletsArray);
 
 let stopSearching = false;
 
-function binarySearch(min, max) {
-    while (min <= max && !stopSearching) {
-        const mid = (min + max) / BigInt(2);
-        const pkey = mid.toString(16).padStart(64, '0');
+function findKeyInRange(start, end) {
+    for (let i = start; i <= end && !stopSearching; i++) {
+        const pkey = i.toString(16).padStart(64, '0');
         const publicKey = generatePublic(pkey);
 
         if (walletsSet.has(publicKey)) {
@@ -22,10 +21,6 @@ function binarySearch(min, max) {
             stopSearching = true;
             saveFoundKey(foundKey);
             break;
-        } else if (mid < max) {
-            min = mid + BigInt(1);
-        } else {
-            max = mid - BigInt(1);
         }
     }
 }
@@ -48,7 +43,7 @@ process.on('SIGINT', () => {
     process.exit();
 });
 
-binarySearch(BigInt(start), BigInt(end));
+findKeyInRange(BigInt(start), BigInt(end));
 
 function generatePublic(privateKey) {
     let _key = new CoinKey(Buffer.from(privateKey, 'hex'));
