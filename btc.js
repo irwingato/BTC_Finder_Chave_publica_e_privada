@@ -1,15 +1,12 @@
-﻿import ranges from './ranges.js';
-import { Worker } from 'worker_threads';
-import readline from 'readline';
+﻿import readline from 'readline';
 import chalk from 'chalk';
-import os from 'os';
+import encontrarBitcoins from './bitcoin-find.js';
+import ranges from './ranges.js';
 
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 });
-
-let min, max = 0;
 
 console.clear();
 
@@ -28,94 +25,76 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
         rl.close();
         process.exit(1);
     } else {
-        min = ranges[answer - 1].min;
-        max = ranges[answer - 1].max;
+        const { min, max } = ranges[answer - 1];
         console.log('Carteira escolhida: ', chalk.cyan(answer), ' Min: ', chalk.yellow(min), ' Max: ', chalk.yellow(max));
         console.log('Número possível de chaves:', chalk.yellow(parseInt(BigInt(max) - BigInt(min)).toLocaleString('pt-BR')));
 
         rl.question(`Escolha uma opção (${chalk.cyan(1)} - Começar do início, ${chalk.cyan(2)} - Escolher uma porcentagem, ${chalk.cyan(3)} - Escolher mínimo): `, (answer2) => {
-            if (answer2 == '2') {
-                rl.question('Escolha um número entre 0 e 1: ', (answer3) => {
-                    if (parseFloat(answer3) > 1 || parseFloat(answer3) < 0) {
-                        console.log(chalk.bgRed('Erro: você precisa escolher um número entre 0 e 1'));
+            if (parseInt(answer2) === 1) {
+                encontrarBitcoins(min, max)
+                    .then(keysFound => {
+                        if (keysFound.length > 0) {
+                            console.log('Chaves encontradas:', keysFound);
+                        } else {
+                            console.log('Nenhuma chave encontrada.');
+                        }
+                        rl.close();
+                    })
+                    .catch(error => {
+                        console.error('Erro ao encontrar chaves:', error);
+                        rl.close();
+                    });
+            } else if (parseInt(answer2) === 2) {
+                rl.question(`Digite a porcentagem de onde começar (0-100): `, (percentage) => {
+                    if (parseInt(percentage) < 0 || parseInt(percentage) > 100) {
+                        console.log(chalk.bgRed('Erro: você precisa escolher uma porcentagem entre 0 e 100'));
                         rl.close();
                         process.exit(1);
+                    } else {
+                        const newMin = BigInt(min) + (BigInt(max) - BigInt(min)) * BigInt(percentage) / BigInt(100);
+                        encontrarBitcoins(newMin, max)
+                            .then(keysFound => {
+                                if (keysFound.length > 0) {
+                                    console.log('Chaves encontradas:', keysFound);
+                                } else {
+                                    console.log('Nenhuma chave encontrada.');
+                                }
+                                rl.close();
+                            })
+                            .catch(error => {
+                                console.error('Erro ao encontrar chaves:', error);
+                                rl.close();
+                            });
                     }
-
-                    const range = BigInt(max) - BigInt(min);
-                    const percentualRange = range * BigInt(Math.floor(parseFloat(answer3) * 1e18)) / BigInt(1e18);
-                    min = BigInt(min) + BigInt(percentualRange);
-                    console.log('Começando em: ', chalk.yellow('0x' + min.toString(16)));
-                    startFindingKeys(min, BigInt(max));
                 });
-            } else if (answer2 == '3') {
-                rl.question('Entre o mínimo: ', (answer3) => {
-                    min = BigInt(answer3);
-                    console.log('Começando em: ', chalk.yellow('0x' + min.toString(16)));
-                    startFindingKeys(min, BigInt(max));
+            } else if (parseInt(answer2) === 3) {
+                rl.question(`Digite o valor mínimo hexadecimal: `, (hexMin) => {
+                    const newMin = BigInt('0x' + hexMin);
+                    if (newMin < BigInt(min) || newMin > BigInt(max)) {
+                        console.log(chalk.bgRed(`Erro: o valor mínimo deve estar entre ${min} e ${max}`));
+                        rl.close();
+                        process.exit(1);
+                    } else {
+                        encontrarBitcoins(newMin, max)
+                            .then(keysFound => {
+                                if (keysFound.length > 0) {
+                                    console.log('Chaves encontradas:', keysFound);
+                                } else {
+                                    console.log('Nenhuma chave encontrada.');
+                                }
+                                rl.close();
+                            })
+                            .catch(error => {
+                                console.error('Erro ao encontrar chaves:', error);
+                                rl.close();
+                            });
+                    }
                 });
             } else {
-                min = BigInt(min);
-                startFindingKeys(min, BigInt(max));
+                console.log(chalk.bgRed('Erro: opção inválida.'));
+                rl.close();
+                process.exit(1);
             }
         });
     }
 });
-
-function startFindingKeys(min, max) {
-    const numCPUs = os.cpus().length;
-    const range = max - min;
-
-    let workers = [];
-    let foundKey = null;
-
-    for (let i = 0; i < numCPUs; i++) {
-        // Each worker starts at a random position within the range
-        const workerMin = min + BigInt(Math.floor(Number(range) * Math.random()));
-        const workerMax = max;
-
-        const worker = new Worker('./worker.js', {
-            workerData: { min: workerMin.toString(), max: workerMax.toString() }
-        });
-
-        worker.on('message', (message) => {
-            if (message) {
-                foundKey = message;
-                console.log('Chave encontrada:', foundKey.privateKey);
-                console.log('WIF:', foundKey.wif);
-
-                workers.forEach(w => w.terminate());
-                rl.close();
-                process.exit();
-            }
-        });
-
-        worker.on('error', (error) => {
-            console.error('Erro no worker:', error);
-            rl.close();
-            process.exit(1);
-        });
-
-        worker.on('exit', (code) => {
-            if (code !== 0) {
-                console.log(`Worker parado com código de saída ${code}`);
-            }
-
-            if (!foundKey && workers.every(w => w.threadId === undefined)) {
-                console.log('Nenhuma chave encontrada.');
-                rl.close();
-                process.exit();
-            }
-        });
-
-        workers.push(worker);
-    }
-
-    // Handle SIGINT (Ctrl+C)
-    process.on('SIGINT', () => {
-        console.log(chalk.yellow('\nEncerrando graciosamente a partir do SIGINT (Ctrl+C)'));
-        workers.forEach(w => w.terminate());
-        rl.close();
-        process.exit();
-    });
-}

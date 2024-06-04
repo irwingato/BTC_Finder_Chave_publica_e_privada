@@ -1,56 +1,56 @@
-import CoinKey from 'coinkey';
-import walletsArray from './wallets.js';
-import chalk from 'chalk';
-import fs from 'fs';
 import { Worker } from 'worker_threads';
 import { cpus } from 'os';
+import ranges from './ranges.js';
+import walletsArray from './wallets.js';
 
-const walletsSet = new Set(walletsArray);
 const numWorkers = cpus().length;
 
 function encontrarBitcoins(min, max) {
     return new Promise((resolve, reject) => {
-        const startTime = Date.now();
         const keysFound = [];
+        const range = BigInt(max) - BigInt(min);
+        const step = range / BigInt(numWorkers);
         let workersCompleted = 0;
+        const workers = [];
 
         for (let i = 0; i < numWorkers; i++) {
-            const worker = new Worker('./worker.js');
+            const workerMin = BigInt(min) + BigInt(i) * step;
+            const workerMax = (i === numWorkers - 1) ? BigInt(max) : (workerMin + step - BigInt(1));
+
+            const worker = new Worker('./worker.js', {
+                workerData: { start: workerMin.toString(), end: workerMax.toString(), walletsArray }
+            });
 
             worker.on('message', (foundKey) => {
                 if (foundKey) {
                     keysFound.push(foundKey);
-                } else {
-                    console.log('Nenhuma chave encontrada.');
+                    workers.forEach(w => w.terminate());
+                    resolve(keysFound);
                 }
             });
 
             worker.on('exit', () => {
                 workersCompleted++;
-
-                if (workersCompleted === numWorkers) {
+                if (workersCompleted === numWorkers && keysFound.length === 0) {
                     resolve(keysFound);
                 }
             });
 
-            const start = BigInt(min) + BigInt(i) * BigInt(Math.floor(Number((BigInt(max) - BigInt(min)) / BigInt(numWorkers))));
-            const end = BigInt(min) + BigInt(i + 1) * BigInt(Math.floor(Number((BigInt(max) - BigInt(min)) / BigInt(numWorkers)))) - BigInt(1);
-            worker.postMessage({ start, end, min, max });
+            worker.on('error', (error) => {
+                console.error('Erro no worker:', error);
+                workers.forEach(w => w.terminate());
+                reject(error);
+            });
+
+            workers.push(worker);
         }
+
+        process.on('SIGINT', () => {
+            console.log('Bye Bye até mais tarde (Ctrl+C)');
+            workers.forEach(w => w.terminate());
+            process.exit();
+        });
     });
-}
-
-
-
-async function generatePublic(privateKey) {
-    let _key = new CoinKey(Buffer.from(privateKey, 'hex'));
-    _key.compressed = true;
-    return _key.publicAddress;
-}
-
-async function generateWIF(privateKey) {
-    let _key = new CoinKey(Buffer.from(privateKey, 'hex'));
-    return _key.privateWif;
 }
 
 export default encontrarBitcoins;

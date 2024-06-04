@@ -1,42 +1,39 @@
 import CoinKey from 'coinkey';
-import walletsArray from './wallets.js';
-import { workerData } from 'worker_threads';
+import { parentPort, workerData } from 'worker_threads';
 import fs from 'fs';
 
-const { min, max } = workerData;
+const { start, end } = workerData;
+const walletsSet = new Set(workerData.walletsArray);
 
-let foundKey = null;
 let stopSearching = false;
-const walletsSet = new Set(walletsArray);
 
-function findKeyInRange(start, end) {
-    if (start > end || stopSearching) return;
+function binarySearch(min, max) {
+    while (min <= max && !stopSearching) {
+        const mid = (min + max) / BigInt(2);
+        const pkey = mid.toString(16).padStart(64, '0');
+        const publicKey = generatePublic(pkey);
 
-    const mid = (start + end) / BigInt(2);
-    const pkey = mid.toString(16).padStart(64, '0');
-    const publicKey = generatePublic(pkey);
-
-    if (walletsSet.has(publicKey)) {
-        foundKey = {
-            privateKey: pkey,
-            wif: generateWIF(pkey)
-        };
-        stopSearching = true; // Para de procurar quando a chave é encontrada
-        saveFoundKey(); // Salva a chave encontrada
-        return;
+        if (walletsSet.has(publicKey)) {
+            const foundKey = {
+                privateKey: pkey,
+                wif: generateWIF(pkey)
+            };
+            parentPort.postMessage(foundKey);
+            stopSearching = true;
+            saveFoundKey(foundKey);
+            break;
+        } else if (mid < max) {
+            min = mid + BigInt(1);
+        } else {
+            max = mid - BigInt(1);
+        }
     }
-
-    if (mid === end) return;
-
-    findKeyInRange(start, mid - BigInt(1)); // Procura no intervalor da metade esquerda
-    findKeyInRange(mid + BigInt(1), end); // Procura no intervalo da metade direita
 }
 
-function saveFoundKey() {
+function saveFoundKey(foundKey) {
     if (foundKey) {
         console.log('Chave encontrada:', foundKey.privateKey);
         console.log('WIF:', foundKey.wif);
-
         try {
             fs.appendFileSync('keys.txt', `Chave encontrada: ${foundKey.privateKey}, WIF: ${foundKey.wif}\n`);
         } catch (err) {
@@ -48,11 +45,10 @@ function saveFoundKey() {
 // Handle SIGINT (Ctrl+C)
 process.on('SIGINT', () => {
     console.log('Bye Bye até mais tarde SIGINT (Ctrl+C)');
-    saveFoundKey(); // Save the found key if any
     process.exit();
 });
 
-findKeyInRange(BigInt(min), BigInt(max));
+binarySearch(BigInt(start), BigInt(end));
 
 function generatePublic(privateKey) {
     let _key = new CoinKey(Buffer.from(privateKey, 'hex'));
