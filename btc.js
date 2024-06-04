@@ -1,142 +1,121 @@
-const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
-const fs = require('fs');
-const CoinKey = require('coinkey');
-const os = require('os');
-const crypto = require('crypto');
-const path = require('path');
+﻿import ranges from './ranges.js';
+import { Worker } from 'worker_threads';
+import readline from 'readline';
+import chalk from 'chalk';
+import os from 'os';
 
-const wallets = ['1AWCLZAjKbV1P7AHvaPNCKiB7ZWVDMxFiz'];
-const numCPUs = os.cpus().length;
-const numThreads = Math.min(4, numCPUs); // Use no máximo 4 threads, ou o número de CPUs disponíveis, o que for menor
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
-const min = BigInt('0x2a90675934c000000');
-const max = BigInt('0x3ffffffffffffffff');
+let min, max = 0;
 
-function generatePublic(privateKey) {
-    const key = new CoinKey(Buffer.from(privateKey, 'hex'));
-    key.compressed = true;
-    return key.publicAddress;
-}
+console.clear();
 
-function saveAttempt(privateKey, attemptNumber) {
-    const logDir = 'attempts';
-    const logFile = path.join(logDir, `attempts_${attemptNumber}.txt`);
+console.log("\x1b[38;2;250;128;114m" + "╔════════════════════════════════════════════════════════╗\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "   ____ _____ ____   _____ ___ _   _ ____  _____ ____   " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "  | __ )_   _/ ___| |  ___|_ _| \\ | |  _ \\| ____|  _ \\  " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "  |  _ \\ | || |     | |_   | ||  \\| | | | |  _| | |_) | " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "  | |_) || || |___  |  _|  | || |\\  | |_| | |___|  _ <  " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "  |____/ |_| \\____| |_|   |___|_| \\_|____/|_____|_| \\_\\ " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "║" + "\x1b[0m" + "\x1b[36m" + "                                                        " + "\x1b[0m" + "\x1b[38;2;250;128;114m" + "║\n" +
+    "╚════════════════════════════════════════════════════════╝\x1b[0m" + '\n');
 
-    if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir);
-    }
-
-    fs.appendFileSync(logFile, `${privateKey}\n`);
-}
-
-function loadLastAttempt() {
-    try {
-        const attemptsDir = 'attempts';
-        const attemptFiles = fs.readdirSync(attemptsDir);
-        const lastAttemptFile = attemptFiles.pop(); // Último arquivo é o mais recente
-
-        if (!lastAttemptFile) {
-            console.log('Nenhum arquivo de tentativa encontrado.');
-            return null;
-        }
-
-        const lastAttemptFilePath = path.join(attemptsDir, lastAttemptFile);
-        const lastAttemptContent = fs.readFileSync(lastAttemptFilePath, 'utf8').trim();
-        const lastAttemptLines = lastAttemptContent.split('\n');
-
-        return lastAttemptLines[lastAttemptLines.length - 1];
-    } catch (err) {
-        console.error('Erro ao carregar a última tentativa:', err.message);
-        return null;
-    }
-}
-
-function createWorker(start, end, lastAttempt) {
-    return new Worker(__filename, {
-        workerData: { start, end, wallets, lastAttempt }
-    });
-}
-
-function getRandomBigInt(min, max) {
-    const range = max - min;
-    const randomOffset = BigInt(Math.floor(Math.random() * Number(range)));
-    return min + randomOffset;
-}
-
-if (!fs.existsSync('logs')) {
-    fs.mkdirSync('logs');
-}
-
-if (!fs.existsSync('attempts.txt')) {
-    fs.writeFileSync('attempts.txt', '');
-}
-
-if (isMainThread) {
-    console.log(`Master ${process.pid} is running`);
-
-    let lastAttempt = loadLastAttempt();
-    if (!lastAttempt) {
-        console.log('Não foi possível carregar a última tentativa. Iniciando uma nova busca...');
+rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)}): `, (answer) => {
+    if (parseInt(answer) < 1 || parseInt(answer) > 160) {
+        console.log(chalk.bgRed('Erro: você precisa escolher um número entre 1 e 160'));
+        rl.close();
+        process.exit(1);
     } else {
-        console.log('Retomando a busca a partir da última tentativa:', lastAttempt);
+        min = ranges[answer - 1].min;
+        max = ranges[answer - 1].max;
+        console.log('Carteira escolhida: ', chalk.cyan(answer), ' Min: ', chalk.yellow(min), ' Max: ', chalk.yellow(max));
+        console.log('Número possível de chaves:', chalk.yellow(parseInt(BigInt(max) - BigInt(min)).toLocaleString('pt-BR')));
+
+        rl.question(`Escolha uma opção (${chalk.cyan(1)} - Começar do início, ${chalk.cyan(2)} - Escolher uma porcentagem, ${chalk.cyan(3)} - Escolher mínimo): `, (answer2) => {
+            if (answer2 == '2') {
+                rl.question('Escolha um número entre 0 e 1: ', (answer3) => {
+                    if (parseFloat(answer3) > 1 || parseFloat(answer3) < 0) {
+                        console.log(chalk.bgRed('Erro: você precisa escolher um número entre 0 e 1'));
+                        rl.close();
+                        process.exit(1);
+                    }
+
+                    const range = BigInt(max) - BigInt(min);
+                    const percentualRange = range * BigInt(Math.floor(parseFloat(answer3) * 1e18)) / BigInt(1e18);
+                    min = BigInt(min) + BigInt(percentualRange);
+                    console.log('Começando em: ', chalk.yellow('0x' + min.toString(16)));
+                    startFindingKeys(min, BigInt(max));
+                });
+            } else if (answer2 == '3') {
+                rl.question('Entre o mínimo: ', (answer3) => {
+                    min = BigInt(answer3);
+                    console.log('Começando em: ', chalk.yellow('0x' + min.toString(16)));
+                    startFindingKeys(min, BigInt(max));
+                });
+            } else {
+                min = BigInt(min);
+                startFindingKeys(min, BigInt(max));
+            }
+        });
     }
+});
 
-    const range = (max - min) / BigInt(numThreads);
-    const startWorkers = () => {
-        for (let i = 0; i < numThreads; i++) {
-            const start = min + BigInt(i) * range;
-            const end = (i === numThreads - 1) ? max : start + range - BigInt(1);
-            const worker = createWorker(start, end, lastAttempt);
+function startFindingKeys(min, max) {
+    const numCPUs = os.cpus().length;
+    const range = max - min;
 
-            worker.on('message', (message) => {
-                if (message.found) {
-                    console.log(`Chave privada encontrada: ${message.privateKey}`);
-                    console.log(`Chave pública correspondente: ${message.publicKey}`);
-                    process.exit();
-                }
-            });
+    let workers = [];
+    let foundKey = null;
 
-            worker.on('exit', (code) => {
-                if (code !== 0) {
-                    console.error(`Worker stopped with exit code ${code}`);
-                    // Restart the worker
-                    const newWorker = createWorker(start, end, lastAttempt);
-                    newWorker.on('message', (message) => {
-                        if (message.found) {
-                            console.log(`Chave privada encontrada: ${message.privateKey}`);
-                            console.log(`Chave pública correspondente: ${message.publicKey}`);
-                            process.exit();
-                        }
-                    });
-                }
-            });
-        }
-    };
+    for (let i = 0; i < numCPUs; i++) {
+        // Each worker starts at a random position within the range
+        const workerMin = min + BigInt(Math.floor(Number(range) * Math.random()));
+        const workerMax = max;
 
-    startWorkers();
-} else {
-    const { start, end, wallets, lastAttempt } = workerData;
+        const worker = new Worker('./worker.js', {
+            workerData: { min: workerMin.toString(), max: workerMax.toString() }
+        });
 
-    console.log(`Worker ${process.pid} started`);
+        worker.on('message', (message) => {
+            if (message) {
+                foundKey = message;
+                console.log('Chave encontrada:', foundKey.privateKey);
+                console.log('WIF:', foundKey.wif);
 
-    (async () => {
-        const increment = BigInt(1);
-        const walletSet = new Set(wallets);
+                workers.forEach(w => w.terminate());
+                rl.close();
+                process.exit();
+            }
+        });
 
-        let key = lastAttempt ? BigInt('0x' + lastAttempt) + increment : start;
-        let attemptNumber = 0;
-        while (true) {
-            let randomKey = getRandomBigInt(start, end);
-            const privateKey = randomKey.toString(16).padStart(64, '0');
-            saveAttempt(privateKey, attemptNumber);
+        worker.on('error', (error) => {
+            console.error('Erro no worker:', error);
+            rl.close();
+            process.exit(1);
+        });
 
-            const publicKey = generatePublic(privateKey);
-            if (walletSet.has(publicKey)) {
-                parentPort.postMessage({ found: true, privateKey, publicKey });
-                return;
+        worker.on('exit', (code) => {
+            if (code !== 0) {
+                console.log(`Worker parado com código de saída ${code}`);
             }
 
-            attemptNumber++;
-        }
-    })();
+            if (!foundKey && workers.every(w => w.threadId === undefined)) {
+                console.log('Nenhuma chave encontrada.');
+                rl.close();
+                process.exit();
+            }
+        });
+
+        workers.push(worker);
+    }
+
+    // Handle SIGINT (Ctrl+C)
+    process.on('SIGINT', () => {
+        console.log(chalk.yellow('\nEncerrando graciosamente a partir do SIGINT (Ctrl+C)'));
+        workers.forEach(w => w.terminate());
+        rl.close();
+        process.exit();
+    });
 }
