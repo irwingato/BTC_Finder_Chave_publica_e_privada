@@ -2,8 +2,8 @@ import CoinKey from 'coinkey';
 import { parentPort, workerData } from 'worker_threads';
 import fs from 'fs';
 
-const { start, end } = workerData;
-const walletsSet = new Set(workerData.walletsArray);
+const { start, end, walletsArray } = workerData;
+const walletsSet = new Set(walletsArray);
 
 let stopSearching = false;
 
