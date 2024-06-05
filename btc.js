@@ -31,7 +31,7 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
 
         rl.question(`Escolha uma opção (${chalk.cyan(1)} - Começar do início, ${chalk.cyan(2)} - Escolher uma porcentagem, ${chalk.cyan(3)} - Escolher mínimo): `, (answer2) => {
             if (parseInt(answer2) === 1) {
-                encontrarBitcoins(min, max)
+                encontrarBitcoins(min, max, answer)
                     .then(keysFound => {
                         if (keysFound.length > 0) {
                             console.log('Chaves encontradas:', keysFound);
@@ -46,13 +46,14 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
                     });
             } else if (parseInt(answer2) === 2) {
                 rl.question(`Digite a porcentagem de onde começar (0-100): `, (percentage) => {
-                    if (parseInt(percentage) < 0 || parseInt(percentage) > 100) {
+                    const perc = parseFloat(percentage);
+                    if (isNaN(perc) || perc < 0 || perc > 100) {
                         console.log(chalk.bgRed('Erro: você precisa escolher uma porcentagem entre 0 e 100'));
                         rl.close();
                         process.exit(1);
                     } else {
-                        const newMin = BigInt(min) + (BigInt(max) - BigInt(min)) * BigInt(percentage) / BigInt(100);
-                        encontrarBitcoins(newMin, max)
+                        const newMin = BigInt(min) + (BigInt(max) - BigInt(min)) * BigInt(perc) / BigInt(100);
+                        encontrarBitcoins(newMin, max, answer)
                             .then(keysFound => {
                                 if (keysFound.length > 0) {
                                     console.log('Chaves encontradas:', keysFound);
@@ -67,15 +68,17 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
                             });
                     }
                 });
-            } else if (parseInt(answer2) === 3) {
+            }
+            else if (parseInt(answer2) === 3) {
                 rl.question(`Digite o valor mínimo hexadecimal: `, (hexMin) => {
-                    const newMin = BigInt('0x' + hexMin);
+                    const cleanedHexMin = hexMin.trim().replace(/^0x/i, ''); // Remove o prefixo "0x" e espaços em branco
+                    const newMin = BigInt('0x' + cleanedHexMin);
                     if (newMin < BigInt(min) || newMin > BigInt(max)) {
                         console.log(chalk.bgRed(`Erro: o valor mínimo deve estar entre ${min} e ${max}`));
                         rl.close();
                         process.exit(1);
                     } else {
-                        encontrarBitcoins(newMin, max)
+                        encontrarBitcoins(newMin, max, answer)
                             .then(keysFound => {
                                 if (keysFound.length > 0) {
                                     console.log('Chaves encontradas:', keysFound);
@@ -90,7 +93,8 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
                             });
                     }
                 });
-            } else {
+            }
+            else {
                 console.log(chalk.bgRed('Erro: opção inválida.'));
                 rl.close();
                 process.exit(1);
