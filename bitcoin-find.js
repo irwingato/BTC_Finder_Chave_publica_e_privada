@@ -12,6 +12,7 @@ function encontrarBitcoins(min, max) {
         const step = range / BigInt(numWorkers);
         let workersCompleted = 0;
         const workers = [];
+        const writeWorker = new Worker('./writeWorker.js');
 
         for (let i = 0; i < numWorkers; i++) {
             const workerMin = BigInt(min) + BigInt(i) * step;
@@ -24,14 +25,14 @@ function encontrarBitcoins(min, max) {
             worker.on('message', (foundKey) => {
                 if (foundKey) {
                     keysFound.push(foundKey);
-                    workers.forEach(w => w.terminate());
-                    resolve(keysFound);
+                    writeWorker.postMessage(foundKey);
                 }
             });
 
             worker.on('exit', () => {
                 workersCompleted++;
-                if (workersCompleted === numWorkers && keysFound.length === 0) {
+                if (workersCompleted === numWorkers) {
+                    writeWorker.terminate();
                     resolve(keysFound);
                 }
             });
@@ -39,6 +40,7 @@ function encontrarBitcoins(min, max) {
             worker.on('error', (error) => {
                 console.error('Erro no worker:', error);
                 workers.forEach(w => w.terminate());
+                writeWorker.terminate();
                 reject(error);
             });
 
@@ -48,6 +50,7 @@ function encontrarBitcoins(min, max) {
         process.on('SIGINT', () => {
             console.log('Bye Bye até mais tarde (Ctrl+C)');
             workers.forEach(w => w.terminate());
+            writeWorker.terminate();
             process.exit();
         });
     });

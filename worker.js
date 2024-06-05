@@ -1,6 +1,5 @@
 import CoinKey from 'coinkey';
 import { parentPort, workerData } from 'worker_threads';
-import fs from 'fs';
 
 const { start, end, walletsArray } = workerData;
 const walletsSet = new Set(walletsArray);
@@ -19,29 +18,10 @@ function findKeyInRange(start, end) {
             };
             parentPort.postMessage(foundKey);
             stopSearching = true;
-            saveFoundKey(foundKey);
             break;
         }
     }
 }
-
-function saveFoundKey(foundKey) {
-    if (foundKey) {
-        console.log('Chave encontrada:', foundKey.privateKey);
-        console.log('WIF:', foundKey.wif);
-        try {
-            fs.appendFileSync('keys.txt', `Chave encontrada: ${foundKey.privateKey}, WIF: ${foundKey.wif}\n`);
-        } catch (err) {
-            console.error('Erro ao salvar a chave encontrada:', err);
-        }
-    }
-}
-
-// Handle SIGINT (Ctrl+C)
-process.on('SIGINT', () => {
-    console.log('Bye Bye até mais tarde SIGINT (Ctrl+C)');
-    process.exit();
-});
 
 findKeyInRange(BigInt(start), BigInt(end));
 
