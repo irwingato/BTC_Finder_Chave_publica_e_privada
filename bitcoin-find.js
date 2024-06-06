@@ -15,29 +15,42 @@ function encontrarBitcoins(min, max, walletNumber, startPercentage = 0, startMin
         const workers = [];
         const writeWorker = new Worker('./writeWorker.js');
 
-        let actualMin = startMinHex ? BigInt(startMinHex) : BigInt(min);
+        let actualMin;
+        if (startMinHex) {
+            actualMin = BigInt(startMinHex);
+        } else if (startPercentage) {
+            actualMin = BigInt(min) + (range * BigInt(Math.round(startPercentage * 100))) / 10000n;
+        } else {
+            actualMin = BigInt(min);
+        }
 
-        const saveProgress = () => {
-            const highestProgress = workers.reduce((acc, worker) => {
-                return worker.workerData && BigInt(worker.workerData.current) > acc ? BigInt(worker.workerData.current) : acc;
-            }, BigInt(actualMin));
-        
-            const percentage = ((highestProgress - BigInt(min)) * 100n / range);
-            const formattedPercentage = parseFloat(percentage.toString()).toFixed(2);
-
-        
+        const saveProgress = (currentAddress) => {
             const progress = {
                 walletNumber,
-                min: min.toString(),
-                max: max.toString(),
-                current: highestProgress.toString(),
-                percentage: `${formattedPercentage}%`
+                minAddress: min.toString(16),
+                maxAddress: max.toString(16),
+                currentAddress: currentAddress.toString(16),
+                percentage: calculatePercentage(min, max, currentAddress)
             };
         
-            fs.writeFileSync(`parada-carteira-${walletNumber}.json`, JSON.stringify(progress, null, 2));
-            console.log(`Progresso salvo em parada-carteira-${walletNumber}.json`);
+            fs.writeFileSync(`progress-carteira-${walletNumber}.json`, JSON.stringify(progress, null, 2));
+            console.log(`Progresso salvo em progress-carteira-${walletNumber}.json`);
         };
-        
+
+        const handleSIGINT = () => {
+            console.log('Interrupção detectada (Ctrl+C). Salvando progresso...');
+            saveProgress(actualMin);
+            process.exit();
+        };
+
+        process.on('SIGINT', handleSIGINT);
+
+        const calculatePercentage = (min, max, current) => {
+            const percentage = parseFloat(((current - min) * 100n / range).toString()).toFixed(2);
+            const remainingPercentage = parseFloat((100 - parseFloat(percentage)).toString()).toFixed(2);
+            return `${percentage}% concluído. ${remainingPercentage}% restante.`;
+        };
+
         for (let i = 0; i < numWorkers; i++) {
             const workerMin = actualMin + BigInt(i) * step;
             const workerMax = (i === numWorkers - 1) ? BigInt(max) : (workerMin + step - 1n);
@@ -46,13 +59,15 @@ function encontrarBitcoins(min, max, walletNumber, startPercentage = 0, startMin
                 workerData: { start: workerMin.toString(), end: workerMax.toString(), walletsArray }
             });
 
-            worker.on('message', (foundKey) => {
-                if (foundKey) {
-                    keysFound.push(foundKey);
-                    writeWorker.postMessage(foundKey);
+            worker.on('message', (message) => {
+                if (message.privateKey) {
+                    keysFound.push(message);
+                    writeWorker.postMessage(message);
                     workers.forEach(w => w.terminate());
                     writeWorker.terminate();
                     resolve(keysFound);
+                } else if (message.status === 'progress_saved') {
+                    console.log('Progresso salvo.');
                 }
             });
 
@@ -74,15 +89,14 @@ function encontrarBitcoins(min, max, walletNumber, startPercentage = 0, startMin
             workers.push(worker);
         }
 
-        process.on('SIGINT', () => {
-            console.log('Interrupção detectada (Ctrl+C). Salvando progresso...');
-            workers.forEach(w => w.terminate());
-            writeWorker.terminate();
-            saveProgress();
-            process.exit();
-        });
+        const getCurrentAddress = () => {
+            const lastWorker = workers[workers.length - 1];
+            const currentAddress = lastWorker && lastWorker.workerData && lastWorker.workerData.current;
+            return currentAddress || actualMin;
+        };
 
-        setInterval(saveProgress, 60000); // Salva o progresso a cada minuto
+        saveProgress(getCurrentAddress());
+        setInterval(() => saveProgress(getCurrentAddress()), 60000); // Atualiza o progresso a cada minuto
     });
 }
 

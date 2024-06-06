@@ -2,6 +2,7 @@
 import chalk from 'chalk';
 import encontrarBitcoins from './bitcoin-find.js';
 import ranges from './ranges.js';
+import fs from 'fs';
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -52,7 +53,7 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
                         rl.close();
                         process.exit(1);
                     } else {
-                        const newMin = BigInt(min) + (BigInt(max) - BigInt(min)) * BigInt(perc) / BigInt(100);
+                        const newMin = BigInt(min) + (BigInt(max) - BigInt(min)) * BigInt(Math.round(perc * 100)) / 10000n;
                         encontrarBitcoins(newMin, max, answer)
                             .then(keysFound => {
                                 if (keysFound.length > 0) {
@@ -78,7 +79,8 @@ rl.question(`Escolha uma carteira puzzle (${chalk.cyan(1)} - ${chalk.cyan(160)})
                         rl.close();
                         process.exit(1);
                     } else {
-                        encontrarBitcoins(newMin, max, answer)
+                        const percentageFromHex = ((newMin - BigInt(min)) * 100n) / (BigInt(max) - BigInt(min));
+                        encontrarBitcoins(newMin, max, answer, parseFloat(percentageFromHex.toString()))
                             .then(keysFound => {
                                 if (keysFound.length > 0) {
                                     console.log('Chaves encontradas:', keysFound);

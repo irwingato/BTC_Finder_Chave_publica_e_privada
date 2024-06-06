@@ -1,4 +1,3 @@
-
 const ranges = [
   { min:"0x1", max:"0x1" },
   { min:"0x2", max:"0x3" },
